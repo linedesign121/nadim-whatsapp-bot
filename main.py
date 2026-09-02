@@ -15,7 +15,7 @@ processed_messages = set()
 
 def get_gemini_reply(user_message: str) -> str:
     if not GEMINI_API_KEY:
-        return "أهلاً بك! تم استلام رسالتك."
+        return "أهلاً بك! مفتاح API غير موجود."
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY.strip()}"
     headers = {"Content-Type": "application/json"}
@@ -34,11 +34,16 @@ def get_gemini_reply(user_message: str) -> str:
     try:
         res = requests.post(url, json=payload, headers=headers, timeout=60)
         data = res.json()
+        print(f"Gemini Status: {res.status_code} | Body: {res.text}")
+
         if res.status_code == 200 and "candidates" in data:
             return data["candidates"][0]["content"]["parts"][0]["text"]
-        return "المعذرة سيدي، صار ضغط لحظي عالسيرفر، ثواني وراجعلك."
-    except Exception:
-        return "المعذرة سيدي، استغرقت الاستجابة وقتاً طويلاً، جرب تبعثلي كمان مرة."
+        
+        error_detail = data.get("error", {}).get("message", res.text)
+        return f"خطأ ({res.status_code}): {error_detail}"
+    except Exception as e:
+        print(f"Error: {e}")
+        return f"خلل في الاتصال: {e}"
 
 
 def send_whatsapp_message(to: str, text: str):
@@ -117,7 +122,6 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
             sender = msg_obj.get("from")
             text = msg_obj.get("text", {}).get("body", "")
 
-            # التحقق من أن الرسالة لم تُعالج من قبل لمنع التكرار
             if msg_id and msg_id in processed_messages:
                 return Response(content="OK", status_code=200)
 
@@ -127,11 +131,9 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     processed_messages.clear()
 
             if text:
-                # الرد الفوري على واتساب وتشغيل المعالجة في الخلفية
                 background_tasks.add_task(handle_ai_response, sender, text)
 
     except Exception as e:
         print(f"خطأ في معالجة الويب هوك: {e}")
 
-    # إرجاع 200 فوراً خلال أجزاء من الثانية لمنع واتساب من إعادة الإرسال
     return Response(content="OK", status_code=200)
