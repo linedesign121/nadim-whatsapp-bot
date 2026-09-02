@@ -21,14 +21,14 @@ def get_ai_reply(user_message: str) -> str:
         "Content-Type": "application/json"
     }
 
-    # النماذج النشطة والمعتمدة على Groq
-    models = ["llama-3.3-70b-specdec", "llama-3.1-8b-instant"]
+    # النماذج المستقرة والمعتمدة في Groq
+    models = ["mixtral-8x7b-32768", "gemma2-9b-it"]
 
     for model_name in models:
         payload = {
             "model": model_name,
             "messages": [
-                {"role": "system", "content": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية، ومختصرة جداً."},
+                {"role": "system", "content": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية ومختصرة جداً."},
                 {"role": "user", "content": user_message}
             ],
             "temperature": 0.6
