@@ -21,8 +21,8 @@ def get_ai_reply(user_message: str) -> str:
         "Content-Type": "application/json"
     }
 
-    # تجربة الموديلات المتاحة على Groq بالتتابع
-    models = ["llama-3.1-70b-versatile", "llama3-70b-8192", "llama3-8b-8192"]
+    # النماذج النشطة والمعتمدة على Groq
+    models = ["llama-3.3-70b-specdec", "llama-3.1-8b-instant"]
 
     for model_name in models:
         payload = {
