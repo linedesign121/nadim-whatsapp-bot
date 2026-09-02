@@ -18,7 +18,7 @@ def get_gemini_reply(user_message: str) -> str:
         print("CRITICAL: GEMINI_API_KEY is not set!")
         return "أهلاً بك! تم استلام رسالتك."
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY.strip()}"
+    models_to_try = ["gemini-3.6-flash", "gemini-2.0-flash", "gemini-2.5-pro"]
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [
@@ -32,22 +32,22 @@ def get_gemini_reply(user_message: str) -> str:
         ]
     }
 
-    try:
-        res = requests.post(url, json=payload, headers=headers, timeout=20)
-        data = res.json()
-        print("حالة Gemini:", res.status_code)
+    for model_name in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY.strip()}"
+        try:
+            res = requests.post(url, json=payload, headers=headers, timeout=20)
+            data = res.json()
+            print(f"تجربة موديل {model_name} - الحالة: {res.status_code}")
 
-        if res.status_code == 200 and "candidates" in data:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        else:
-            err_msg = data.get("error", {}).get("message", "خطأ غير معروف")
-            print(f"Gemini Error: {err_msg}")
-            return "يا هلا بيك! النظام قيد التحديث السريع، كيف أقدر أساعدك؟"
-    except requests.exceptions.Timeout:
-        return "المعذرة سيدي، الاتصال أخذ وقت أطول من المعتاد. ابعثلي كمان مرة."
-    except Exception as e:
-        print(f"Gemini Exception: {e}")
-        return f"عذراً، خطأ في الاتصال: {e}"
+            if res.status_code == 200 and "candidates" in data:
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                err_msg = data.get("error", {}).get("message", "خطأ غير معروف")
+                print(f"Gemini Error ({model_name}): {err_msg}")
+        except Exception as e:
+            print(f"Gemini Exception ({model_name}): {e}")
+
+    return "يا هلا بيك سيدي نديم! النظام عم يعمل تحديث فوري، ابعثلي كمان ثواني وبكون معك."
 
 
 def send_whatsapp_message(to: str, text: str):
