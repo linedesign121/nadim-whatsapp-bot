@@ -1,9 +1,9 @@
-import os
-import requests
 import datetime
-from fastapi import FastAPI, Request, Response
+import os
 from apscheduler.schedulers.background import BackgroundScheduler
+from fastapi import FastAPI, Request, Response
 from google import genai
+import requests
 
 app = FastAPI()
 
@@ -15,82 +15,86 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
+
 def send_whatsapp_msg(to_number: str, text: str):
-    if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
-        return
-    url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to_number,
-        "type": "text",
-        "text": {"body": text}
-    }
-    requests.post(url, json=payload, headers=headers)
+  if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+    print("Error: WHATSAPP_TOKEN or PHONE_NUMBER_ID is missing!")
+    return
+  url = f"https://graph.facebook.com/v25.0/{PHONE_NUMBER_ID}/messages"
+  headers = {
+      "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+      "Content-Type": "application/json",
+  }
+  payload = {
+      "messaging_product": "whatsapp",
+      "to": to_number,
+      "type": "text",
+      "text": {"body": text},
+  }
+  res = requests.post(url, json=payload, headers=headers)
+  print(f"WhatsApp API Status: {res.status_code}, Response: {res.text}")
+
 
 def morning_routine():
-    msg = (
-        "☀️ صباح الخير سيدي نديم\n\n"
-        "📍 عمان اليوم: الطقس معتدل ومناسب.\n"
-        "☕ نبدأ الصباح بكوب ماء، والمشروب المفضل، وتذكير السيجارة الأولى.\n\n"
-        "🎯 رقم اليوم وهدف الشهر قيد المتابعة.\n"
-        "جاهز ننطلق بمهام اليوم؟"
-    )
+  msg = (
+      "☀️ صباح الخير سيدي نديم ☕\n\n"
+      "📍 عمان اليوم: الطقس معتدل ومناسب ⛅\n"
+      "🥛 نبدأ الصباح بكوب ماء، والمشروب المفضل، وتذكير السيجارة الأولى"
+      " 🚬\n\n"
+      "🎯 رقم اليوم وهدف الشهر قيد المتابعة 📊\n"
+      "جاهز ننطلق بمهام اليوم؟"
+  )
+  if MY_PHONE_NUMBER:
     send_whatsapp_msg(MY_PHONE_NUMBER, msg)
 
+
 scheduler = BackgroundScheduler(timezone="Asia/Amman")
-scheduler.add_job(morning_routine, 'cron', hour=7, minute=0)
+scheduler.add_job(morning_routine, "cron", hour=7, minute=0)
 scheduler.start()
 
-@app.get("/webhook")
-async def verify_webhook(request: Request):
-    params = request.query_params
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
-
-    if mode == "subscribe" and token == VERIFY_TOKEN:
-        return Response(content=challenge, media_type="text/plain")
-    return Response(content="Verification failed", status_code=403)
-
-@app.post("/webhook")
-async def receive_message(request: Request):
-    data = await request.json()
-    try:
-        entry = data["entry"][0]["changes"][0]["value"]
-        if "messages" in entry:
-            message = entry["messages"][0]
-            from_number = message["from"]
-            user_text = message.get("text", {}).get("body", "")
-
-            if "وضع المدير" in user_text:
-                reply = (
-                    "🏛️ وضع المدير (CEO Mode) مفعل:\n"
-                    "• التركيز الفوري: حسم عروض الصفقات المعلقة.\n"
-                    "• ممنوع اليوم: التشتت أو التعديلات غير المدفوعة.\n"
-                    "• أكبر خطر: تأخر تحصيل الدفعات."
-                )
-            else:
-                prompt = (
-                    "أنت المساعد التنفيذي والشخصي لسيدي نديم (NADIM AI). "
-                    "خاطبه بـ 'سيدي نديم'. التزم بالقرارات العملية والدعم المباشر والشخصي وفق التعليمات المعتمدة.\n"
-                    f"رسالة نديم: {user_text}"
-                )
-                res = ai_client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt
-                )
-                reply = res.text
-
-            send_whatsapp_msg(from_number, reply)
-    except Exception:
-        pass
-
-    return {"status": "success"}
 
 @app.get("/")
-def health_check():
-    return {"status": "NADIM AI is running on WhatsApp 24/7"}
+def home():
+  return {"status": "Bot is running"}
+
+
+@app.get("/webhook")
+def verify_webhook(request: Request):
+  params = dict(request.query_params)
+  mode = params.get("hub.mode")
+  token = params.get("hub.verify_token")
+  challenge = params.get("hub.challenge")
+
+  if mode == "subscribe" and token == VERIFY_TOKEN:
+    return Response(content=challenge, media_type="text/plain")
+  return Response(content="Forbidden", status_code=403)
+
+
+@app.post("/webhook")
+async def receive_webhook(request: Request):
+  data = await request.json()
+  try:
+    entry = data.get("entry", [])[0]
+    changes = entry.get("changes", [])[0]
+    value = changes.get("value", {})
+    messages = value.get("messages", [])
+
+    if messages:
+      msg_obj = messages[0]
+      from_number = msg_obj.get("from")
+      text = msg_obj.get("text", {}).get("body", "")
+
+      if text and ai_client:
+        prompt = (
+            "أنت المساعد الشخصي الذكي لنديم (Nadim)، تتحدث بلهجة أردنية مهذبة،"
+            f" ذكية، ومختصرة. الرسالة الواردة: {text}"
+        )
+        response = ai_client.models.generate_content(
+            model="gemini-2.5-flash", contents=prompt
+        )
+        bot_reply = response.text
+        send_whatsapp_msg(from_number, bot_reply)
+  except Exception as e:
+    print(f"Webhook processing error: {e}")
+
+  return {"status": "ok"}
