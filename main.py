@@ -18,7 +18,7 @@ def get_gemini_reply(user_message: str) -> str:
         print("CRITICAL: GEMINI_API_KEY is not set!")
         return "أهلاً بك! تم استلام رسالتك."
 
-    models_to_try = ["gemini-3.6-flash", "gemini-2.0-flash", "gemini-2.5-pro"]
+    models_to_try = ["gemini-3.6-flash", "gemini-3.1-pro-preview"]
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [
