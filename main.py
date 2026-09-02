@@ -13,7 +13,7 @@ processed_messages = set()
 
 def get_ai_reply(user_message: str) -> str:
     if not GROQ_API_KEY:
-        return "المعذرة سيدي، المفتاح غير معرف."
+        return "المعذرة سيدي، مفتاح الذكاء الاصطناعي غير متوفر."
 
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
