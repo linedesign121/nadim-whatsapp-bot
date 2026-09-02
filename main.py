@@ -7,37 +7,38 @@ app = FastAPI()
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "my_secret_token_123")
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 processed_messages = set()
 
-def get_gemini_reply(user_message: str) -> str:
-    if not GEMINI_API_KEY:
-        return "المعذرة سيدي، مفتاح Gemini غير معرف."
+def get_ai_reply(user_message: str) -> str:
+    if not GROQ_API_KEY:
+        return "المعذرة سيدي، المفتاح غير معرف."
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY}"
-    headers = {"Content-Type": "application/json"}
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
     payload = {
-        "contents": [{
-            "parts": [{"text": user_message}]
-        }],
-        "systemInstruction": {
-            "parts": [{"text": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية ومختصرة جداً."}]
-        }
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "system", "content": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية ومختصرة جداً."},
+            {"role": "user", "content": user_message}
+        ],
+        "temperature": 0.6
     }
 
     try:
-        # رفع مهلة الانتظار لـ 25 ثانية لتفادي الـ Timeout
-        res = requests.post(url, headers=headers, json=payload, timeout=25)
-        data = res.json()
+        res = requests.post(url, headers=headers, json=payload, timeout=10)
         if res.status_code == 200:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+            return res.json()["choices"][0]["message"]["content"]
         else:
-            print(f"Gemini API Error: {res.status_code} - {data}")
-            return "أهلاً بك سيدي! كيف بقدر أساعدك اليوم؟"
+            print(f"Groq API Error: {res.status_code} - {res.text}")
+            return "أهلاً بك! كيف بقدر أساعدك اليوم؟"
     except Exception as e:
-        print(f"Gemini Request Exception: {e}")
-        return "أهلاً بك سيدي! كيف بقدر أساعدك اليوم؟"
+        print(f"Groq Exception: {e}")
+        return "أهلاً بك! كيف بقدر أساعدك اليوم؟"
 
 def send_whatsapp_message(to_number: str, message_text: str):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
@@ -103,10 +104,10 @@ async def handle_incoming_messages(request: Request):
             from_number = msg.get("from")
             body = msg.get("text", {}).get("body", "")
 
-            bot_reply = get_gemini_reply(body)
+            bot_reply = get_ai_reply(body)
             send_whatsapp_message(from_number, bot_reply)
 
     except Exception as e:
-        print(f"Webhook processing error: {e}")
+        print(f"Webhook error: {e}")
 
     return {"status": "ok"}
