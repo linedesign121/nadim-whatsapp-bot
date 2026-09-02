@@ -86,7 +86,7 @@ async def receive_webhook(request: Request):
             if text and ai_client:
                 prompt = "أنت المساعد الشخصي لنديم، أجب باختصار وذكاء: " + text
                 response = ai_client.models.generate_content(
-                    model="gemini-3.0-flash", contents=prompt
+                    model="gemini-1.5-flash", contents=prompt
                 )
                 bot_reply = response.text
                 send_whatsapp_msg(from_number, bot_reply)
