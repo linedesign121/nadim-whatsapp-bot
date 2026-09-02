@@ -2,6 +2,7 @@ import os
 import requests
 from fastapi import FastAPI, Request, Response, BackgroundTasks
 from apscheduler.schedulers.background import BackgroundScheduler
+from google import genai
 
 app = FastAPI()
 
@@ -11,39 +12,39 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nadim_secure_token_123")
 MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+client = None
+if GEMINI_API_KEY:
+    client = genai.Client(api_key=GEMINI_API_KEY.strip())
+
 processed_messages = set()
 
 def get_gemini_reply(user_message: str) -> str:
-    if not GEMINI_API_KEY:
-        return "أهلاً بك! مفتاح API غير موجود."
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY.strip()}"
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": f"أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية، ومختصرة جداً:\n{user_message}"
-                    }
-                ]
-            }
-        ]
-    }
+    if not client:
+        return "المعذرة سيدي، مفتاح Gemini غير معرف."
 
     try:
-        res = requests.post(url, json=payload, headers=headers, timeout=60)
-        data = res.json()
-        print(f"Gemini Status: {res.status_code} | Body: {res.text}")
-
-        if res.status_code == 200 and "candidates" in data:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        
-        error_detail = data.get("error", {}).get("message", res.text)
-        return f"خطأ ({res.status_code}): {error_detail}"
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=user_message,
+            config={
+                "system_instruction": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية، ومختصرة جداً."
+            }
+        )
+        return response.text if response.text else "أهلاً بك سيدي، كيف أساعدك؟"
     except Exception as e:
-        print(f"Error: {e}")
-        return f"خلل في الاتصال: {e}"
+        print(f"Gemini API Error: {e}")
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash-lite",
+                contents=user_message,
+                config={
+                    "system_instruction": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية ومختصرة."
+                }
+            )
+            return response.text
+        except Exception as e2:
+            print(f"Fallback Error: {e2}")
+            return "المعذرة سيدي، واجهت مشكلة اتصال مؤقتة، ثواني وبكون جاهز."
 
 
 def send_whatsapp_message(to: str, text: str):
@@ -63,14 +64,14 @@ def send_whatsapp_message(to: str, text: str):
     }
 
     try:
-        requests.post(url, json=payload, headers=headers, timeout=20)
+        requests.post(url, json=payload, headers=headers, timeout=15)
     except Exception as e:
-        print(f"خطأ في إرسال رسالة واتساب: {e}")
+        print(f"WhatsApp Error: {e}")
 
 
-def handle_ai_response(sender: str, text: str):
-    bot_reply = get_gemini_reply(text)
-    send_whatsapp_message(sender, bot_reply)
+def handle_incoming_message(sender: str, text: str):
+    reply = get_gemini_reply(text)
+    send_whatsapp_message(sender, reply)
 
 
 def morning_routine():
@@ -92,7 +93,7 @@ scheduler.start()
 
 @app.get("/")
 def home():
-    return {"حالة": "البوت قيد التشغيل"}
+    return {"status": "running"}
 
 
 @app.get("/webhook")
@@ -104,7 +105,7 @@ def verify_webhook(request: Request):
 
     if mode == "subscribe" and token == VERIFY_TOKEN:
         return Response(content=challenge, media_type="text/plain")
-    return Response(content="محرّم", status_code=403)
+    return Response(content="Forbidden", status_code=403)
 
 
 @app.post("/webhook")
@@ -127,13 +128,13 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 
             if msg_id:
                 processed_messages.add(msg_id)
-                if len(processed_messages) > 1000:
+                if len(processed_messages) > 500:
                     processed_messages.clear()
 
             if text:
-                background_tasks.add_task(handle_ai_response, sender, text)
+                background_tasks.add_task(handle_incoming_message, sender, text)
 
     except Exception as e:
-        print(f"خطأ في معالجة الويب هوك: {e}")
+        print(f"Webhook Error: {e}")
 
     return Response(content="OK", status_code=200)
