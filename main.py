@@ -18,62 +18,72 @@ def get_gemini_reply(user_message: str) -> str:
         print("CRITICAL: GEMINI_API_KEY is not set!")
         return "أهلاً بك! تم استلام رسالتك."
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [
             {
                 "parts": [
                     {
-                        "text": f"أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية، ومختصرة جداً: {user_message}"
+                        "text": f"أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية، ومختصرة جداً:\n{user_message}"
                     }
                 ]
             }
         ]
     }
+
     try:
-        res = requests.post(url, json=payload, headers=headers, timeout=15)
+        res = requests.post(url, json=payload, headers=headers, timeout=35)
         data = res.json()
-        print(f"Gemini Status: {res.status_code}")
-        
+        print("حالة برج الجوزاء (Gemini Status):", res.status_code)
+
         if res.status_code == 200 and "candidates" in data:
             return data["candidates"][0]["content"]["parts"][0]["text"]
         else:
-            err = data.get("error", {}).get("message", "Unknown error")
-            return f"عذراً، حدث خطأ: {err}"
-    except Exception as err:
-        return f"عذراً، خطأ في الاتصال: {str(err)}"
+            err_msg = data.get("error", {}).get("message", "خطأ غير معروف")
+            print(f"Gemini Error: {err_msg}")
+            return "عذراً، حدث خطأ أثناء معالجة الطلب."
+    except requests.exceptions.Timeout:
+        return "عذراً، استغرقت الاستجابة وقتاً طويلاً. يرجى المحاولة مرة أخرى."
+    except Exception as e:
+        print(f"Gemini Exception: {e}")
+        return f"عذراً، خطأ في الاتصال: {e}"
 
 
-def send_whatsapp_msg(to_number: str, text: str):
-    if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
-        print("Error: WHATSAPP_TOKEN or PHONE_NUMBER_ID missing!")
+def send_whatsapp_message(to: str, text: str):
+    if not PHONE_NUMBER_ID or not WHATSAPP_TOKEN:
+        print("خطأ: رمز WHATSAPP_TOKEN أو معرف رقم الهاتف مفقود!")
         return
-    url = f"https://graph.facebook.com/v25.0/{PHONE_NUMBER_ID}/messages"
+
+    url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
     payload = {
         "messaging_product": "whatsapp",
-        "to": to_number,
+        "to": to,
         "type": "text",
-        "text": {"body": text}
+        "text": {"body": text},
     }
-    res = requests.post(url, json=payload, headers=headers)
-    print(f"WhatsApp API Status: {res.status_code}, Response: {res.text}")
+
+    try:
+        res = requests.post(url, json=payload, headers=headers, timeout=20)
+        print(f"حالة واجهة برمجة تطبيقات واتساب: {res.status_code}, إجابة: {res.text}")
+    except Exception as e:
+        print(f"خطأ في إرسال رسالة واتساب: {e}")
 
 
 def morning_routine():
     msg = (
-        "☀️ صباح الخير سيدي نديم \n\n"
-        "☕ عمان اليوم: الطقس معتدل ومناسب \n"
-        "🥛 نبدأ الصباح بكوب ماء، والمشروب المفضل، وتذكير السيجارة الأولى \n\n"
-        "🎯 رقم اليوم وهدف الشهر قيد المتابعة \n"
+        "صباح الخير سيدي نديم ☀️\n\n"
+        "☕ عمان اليوم: الطقس معتدل ومناسب.\n"
+        "ابدأ الصباح بكوب، والمشروب المفضل، وتذكير التجارة الأولى 🥛\n\n"
+        "🎯 رقم اليوم وهدف الشهر قيد المتابعة.\n"
         "جاهز ننطلق بمهام اليوم؟"
     )
     if MY_PHONE_NUMBER:
-        send_whatsapp_msg(MY_PHONE_NUMBER, msg)
+        send_whatsapp_message(MY_PHONE_NUMBER, msg)
 
 
 scheduler = BackgroundScheduler(timezone="Asia/Amman")
@@ -83,7 +93,7 @@ scheduler.start()
 
 @app.get("/")
 def home():
-    return {"status": "Bot is running"}
+    return {"حالة": "البوت قيد التشغيل"}
 
 
 @app.get("/webhook")
@@ -95,13 +105,13 @@ def verify_webhook(request: Request):
 
     if mode == "subscribe" and token == VERIFY_TOKEN:
         return Response(content=challenge, media_type="text/plain")
-    return Response(content="Forbidden", status_code=403)
+    return Response(content="محرّم", status_code=403)
 
 
 @app.post("/webhook")
 async def receive_webhook(request: Request):
-    data = await request.json()
     try:
+        data = await request.json()
         entry = data.get("entry", [])[0]
         changes = entry.get("changes", [])[0]
         value = changes.get("value", {})
@@ -109,13 +119,13 @@ async def receive_webhook(request: Request):
 
         if messages:
             msg_obj = messages[0]
-            from_number = msg_obj.get("from")
+            sender = msg_obj.get("from")
             text = msg_obj.get("text", {}).get("body", "")
 
             if text:
                 bot_reply = get_gemini_reply(text)
-                send_whatsapp_msg(from_number, bot_reply)
+                send_whatsapp_message(sender, bot_reply)
     except Exception as e:
-        print(f"Webhook processing error: {e}")
+        print(f"خطأ في معالجة الويب هوك: {e}")
 
-    return {"status": "ok"}
+    return {"حالة": "نعم"}
