@@ -18,7 +18,7 @@ def get_gemini_reply(user_message: str) -> str:
         print("CRITICAL: GEMINI_API_KEY is not set!")
         return "أهلاً بك! تم استلام رسالتك."
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY.strip()}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY.strip()}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [
