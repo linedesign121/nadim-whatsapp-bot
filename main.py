@@ -84,16 +84,13 @@ async def receive_webhook(request: Request):
       from_number = msg_obj.get("from")
       text = msg_obj.get("text", {}).get("body", "")
 
-      if text and ai_client:
-        prompt = (
-            "أنت المساعد الشخصي الذكي لنديم (Nadim)، تتحدث بلهجة أردنية مهذبة،"
-            f" ذكية، ومختصرة. الرسالة الواردة: {text}"
-        )
-        response = ai_client.models.generate_content(
-            model="gemini-2.0-flash", contents=prompt
-        )
-        bot_reply = response.text
-        send_whatsapp_msg(from_number, bot_reply)
+if text and ai_client:
+           prompt = "أنت المساعد الشخصي لنديم. أجب باختصار: " + text
+            response = ai_client.models.generate_content(
+                model="gemini-3.0-flash", contents=prompt
+            )
+            bot_reply = response.text
+            send_whatsapp_msg(from_number, bot_reply)
   except Exception as e:
     print(f"Webhook processing error: {e}")
 
