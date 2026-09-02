@@ -1,41 +1,46 @@
 import os
 import requests
-from fastapi import FastAPI, Request, Response, BackgroundTasks
-from apscheduler.schedulers.background import BackgroundScheduler
+from fastapi import FastAPI, Request, Response
 from google import genai
 
 app = FastAPI()
 
+# المتغيرات البيئية
+VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "my_secret_token_123")
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
-VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nadim_secure_token_123")
-MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+# إعداد عميل Gemini
 client = None
 if GEMINI_API_KEY:
-    client = genai.Client(api_key=GEMINI_API_KEY.strip())
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+    except Exception as e:
+        print(f"Error initializing Gemini Client: {e}")
 
+# تخزين مؤقت للرسائل المعالجة لتفادي التكرار
 processed_messages = set()
 
 def get_gemini_reply(user_message: str) -> str:
     if not client:
-        return "المعذرة سيدي، مفتاح Gemini غير معرف."
-
+        return "المعذرة، مفتاح الذكاء الاصطناعي غير معرف حالياً."
+    
     try:
         response = client.models.generate_content(
-            model="gemini-3.6-flash",
+            model="gemini-2.5-flash",
             contents=user_message,
             config={
-                "system_instruction": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية، ومختصرة جداً."
+                "system_instruction": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية ومختصرة."
             }
         )
-        return response.text if response.text else "أهلاً بك سيدي، كيف أساعدك؟"
+        return response.text if response.text else "أهلاً بك، كيف أساعدك؟"
     except Exception as e:
         print(f"Gemini API Error: {e}")
+        # محاولة أخيرة عبر الموديل الأقدم في حال الضغط
         try:
             response = client.models.generate_content(
-                model="gemini-3.6-flash-lite",
+                model="gemini-2.0-flash",
                 contents=user_message,
                 config={
                     "system_instruction": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية ومختصرة."
@@ -44,61 +49,37 @@ def get_gemini_reply(user_message: str) -> str:
             return response.text
         except Exception as e2:
             print(f"Fallback Error: {e2}")
-            return "المعذرة سيدي، واجهت مشكلة اتصال مؤقتة، ثواني وبكون جاهز."
+            return "المعذرة، واجهت مشكلة اتصال مؤقتة، ثواني وبكون جاهز."
 
-
-def send_whatsapp_message(to: str, text: str):
-    if not PHONE_NUMBER_ID or not WHATSAPP_TOKEN:
+def send_whatsapp_message(to_number: str, message_text: str):
+    if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+        print("Error: WHATSAPP_TOKEN or PHONE_NUMBER_ID is missing.")
         return
 
-    url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
+    url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
     headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN.strip()}",
-        "Content-Type": "application/json",
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
     }
     payload = {
         "messaging_product": "whatsapp",
-        "to": to,
+        "to": to_number,
         "type": "text",
-        "text": {"body": text},
+        "text": {"body": message_text}
     }
-
     try:
-        requests.post(url, json=payload, headers=headers, timeout=15)
+        res = requests.post(url, headers=headers, json=payload, timeout=10)
+        print(f"WhatsApp API Status: {res.status_code}")
     except Exception as e:
-        print(f"WhatsApp Error: {e}")
-
-
-def handle_incoming_message(sender: str, text: str):
-    reply = get_gemini_reply(text)
-    send_whatsapp_message(sender, reply)
-
-
-def morning_routine():
-    msg = (
-        "صباح الخير سيدي نديم ☀️\n\n"
-        "☕ عمان اليوم: الطقس معتدل ومناسب.\n"
-        "ابدأ الصباح بكوب قهوتك المفضل ☕\n\n"
-        "🎯 أهداف اليوم قيد المتابعة.\n"
-        "جاهز ننطلق بمهام اليوم؟"
-    )
-    if MY_PHONE_NUMBER:
-        send_whatsapp_message(MY_PHONE_NUMBER, msg)
-
-
-scheduler = BackgroundScheduler(timezone="Asia/Amman")
-scheduler.add_job(morning_routine, "cron", hour=7, minute=0)
-scheduler.start()
-
+        print(f"Error sending WhatsApp message: {e}")
 
 @app.get("/")
 def home():
-    return {"status": "running"}
-
+    return {"status": "running", "bot": "Nadim WhatsApp Bot"}
 
 @app.get("/webhook")
 def verify_webhook(request: Request):
-    params = dict(request.query_params)
+    params = request.query_params
     mode = params.get("hub.mode")
     token = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
@@ -107,34 +88,42 @@ def verify_webhook(request: Request):
         return Response(content=challenge, media_type="text/plain")
     return Response(content="Forbidden", status_code=403)
 
-
 @app.post("/webhook")
-async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
+async def handle_incoming_messages(request: Request):
+    data = await request.json()
+
     try:
-        data = await request.json()
         entry = data.get("entry", [])[0]
         changes = entry.get("changes", [])[0]
         value = changes.get("value", {})
         messages = value.get("messages", [])
 
-        if messages:
-            msg_obj = messages[0]
-            msg_id = msg_obj.get("id")
-            sender = msg_obj.get("from")
-            text = msg_obj.get("text", {}).get("body", "")
+        if not messages:
+            return {"status": "no_message"}
 
-            if msg_id and msg_id in processed_messages:
-                return Response(content="OK", status_code=200)
+        msg = messages[0]
+        msg_id = msg.get("id")
 
-            if msg_id:
-                processed_messages.add(msg_id)
-                if len(processed_messages) > 500:
-                    processed_messages.clear()
+        # منع تكرار الرد على نفس الرسالة
+        if msg_id in processed_messages:
+            return {"status": "ignored_duplicate"}
 
-            if text:
-                background_tasks.add_task(handle_incoming_message, sender, text)
+        processed_messages.add(msg_id)
+        if len(processed_messages) > 1000:
+            processed_messages.clear()
+
+        # معالجة الرسالة النصية
+        if msg.get("type") == "text":
+            from_number = msg.get("from")
+            body = msg.get("text", {}).get("body", "")
+
+            # توليد الرد من Gemini
+            bot_reply = get_gemini_reply(body)
+
+            # إرسال الرد إلى واتساب
+            send_whatsapp_message(from_number, bot_reply)
 
     except Exception as e:
-        print(f"Webhook Error: {e}")
+        print(f"Webhook processing error: {e}")
 
-    return Response(content="OK", status_code=200)
+    return {"status": "ok"}
