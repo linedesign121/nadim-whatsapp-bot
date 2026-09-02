@@ -1,7 +1,6 @@
 import os
-import datetime
 import requests
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, BackgroundTasks
 from apscheduler.schedulers.background import BackgroundScheduler
 
 app = FastAPI()
@@ -12,10 +11,10 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nadim_secure_token_123")
 MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+processed_messages = set()
 
 def get_gemini_reply(user_message: str) -> str:
     if not GEMINI_API_KEY:
-        print("CRITICAL: GEMINI_API_KEY is not set!")
         return "أهلاً بك! تم استلام رسالتك."
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY.strip()}"
@@ -33,26 +32,17 @@ def get_gemini_reply(user_message: str) -> str:
     }
 
     try:
-        res = requests.post(url, json=payload, headers=headers, timeout=40)
+        res = requests.post(url, json=payload, headers=headers, timeout=30)
         data = res.json()
-        print(f"حالة Gemini - الحالة: {res.status_code}")
-
         if res.status_code == 200 and "candidates" in data:
             return data["candidates"][0]["content"]["parts"][0]["text"]
-        else:
-            err_msg = data.get("error", {}).get("message", "خطأ غير معروف")
-            print(f"Gemini Error: {err_msg}")
-            return f"عذراً سيدي، خطأ من الخادم: {err_msg}"
-    except requests.exceptions.Timeout:
-        return "المعذرة سيدي، استغرقت الاستجابة وقتاً طويلاً، يرجى إعادة الإرسال."
-    except Exception as e:
-        print(f"Gemini Exception: {e}")
-        return f"عذراً، خطأ في الاتصال: {e}"
+        return "المعذرة سيدي، صار ضغط لحظي عالسيرفر، ثواني وراجعلك."
+    except Exception:
+        return "المعذرة سيدي، استغرقت الاستجابة وقتاً طويلاً، جرب تبعثلي كمان مرة."
 
 
 def send_whatsapp_message(to: str, text: str):
     if not PHONE_NUMBER_ID or not WHATSAPP_TOKEN:
-        print("خطأ: رمز WHATSAPP_TOKEN أو معرف رقم الهاتف مفقود!")
         return
 
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
@@ -68,18 +58,22 @@ def send_whatsapp_message(to: str, text: str):
     }
 
     try:
-        res = requests.post(url, json=payload, headers=headers, timeout=20)
-        print(f"حالة واجهة برمجة تطبيقات واتساب: {res.status_code}")
+        requests.post(url, json=payload, headers=headers, timeout=20)
     except Exception as e:
         print(f"خطأ في إرسال رسالة واتساب: {e}")
+
+
+def handle_ai_response(sender: str, text: str):
+    bot_reply = get_gemini_reply(text)
+    send_whatsapp_message(sender, bot_reply)
 
 
 def morning_routine():
     msg = (
         "صباح الخير سيدي نديم ☀️\n\n"
         "☕ عمان اليوم: الطقس معتدل ومناسب.\n"
-        "ابدأ الصباح بكوب، والمشروب المفضل، وتذكير التجارة الأولى 🥛\n\n"
-        "🎯 رقم اليوم وهدف الشهر قيد المتابعة.\n"
+        "ابدأ الصباح بكوب قهوتك المفضل ☕\n\n"
+        "🎯 أهداف اليوم قيد المتابعة.\n"
         "جاهز ننطلق بمهام اليوم؟"
     )
     if MY_PHONE_NUMBER:
@@ -109,7 +103,7 @@ def verify_webhook(request: Request):
 
 
 @app.post("/webhook")
-async def receive_webhook(request: Request):
+async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     try:
         data = await request.json()
         entry = data.get("entry", [])[0]
@@ -119,13 +113,25 @@ async def receive_webhook(request: Request):
 
         if messages:
             msg_obj = messages[0]
+            msg_id = msg_obj.get("id")
             sender = msg_obj.get("from")
             text = msg_obj.get("text", {}).get("body", "")
 
+            # التحقق من أن الرسالة لم تُعالج من قبل لمنع التكرار
+            if msg_id and msg_id in processed_messages:
+                return Response(content="OK", status_code=200)
+
+            if msg_id:
+                processed_messages.add(msg_id)
+                if len(processed_messages) > 1000:
+                    processed_messages.clear()
+
             if text:
-                bot_reply = get_gemini_reply(text)
-                send_whatsapp_message(sender, bot_reply)
+                # الرد الفوري على واتساب وتشغيل المعالجة في الخلفية
+                background_tasks.add_task(handle_ai_response, sender, text)
+
     except Exception as e:
         print(f"خطأ في معالجة الويب هوك: {e}")
 
-    return {"حالة": "نعم"}
+    # إرجاع 200 فوراً خلال أجزاء من الثانية لمنع واتساب من إعادة الإرسال
+    return Response(content="OK", status_code=200)
