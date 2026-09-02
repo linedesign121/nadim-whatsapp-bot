@@ -10,60 +10,84 @@ PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 processed_messages = set()
+chat_history = []
+ACTIVE_MODEL = None
+
+def get_best_available_model() -> str:
+    """سحب الموديل الفعال والنشط تلقائياً من سيرفر Groq عند بدء التشغيل"""
+    global ACTIVE_MODEL
+    if ACTIVE_MODEL:
+        return ACTIVE_MODEL
+
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+    try:
+        res = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=5)
+        if res.status_code == 200:
+            data = res.json().get("data", [])
+            # اختيار أول نموذج محادثة نصي نشط وتخطي نماذج الصوت والحماية
+            for item in data:
+                m_id = item.get("id", "")
+                if not any(x in m_id for x in ["whisper", "guard", "vision"]):
+                    ACTIVE_MODEL = m_id
+                    print(f"--> Successfully loaded active Groq model: {ACTIVE_MODEL}")
+                    return ACTIVE_MODEL
+    except Exception as e:
+        print(f"Error fetching models list: {e}")
+
+    # بديل احتياطي عام
+    ACTIVE_MODEL = "llama-3.1-8b-instant"
+    return ACTIVE_MODEL
 
 def get_ai_reply(user_message: str) -> str:
+    global chat_history
     if not GROQ_API_KEY:
-        return "المعذرة سيدي، مفتاح الذكاء الاصطناعي غير متوفر."
+        return "المعذرة سيدي، مفتاح Groq غير معرف في Render."
 
+    model_to_use = get_best_available_model()
+    url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
 
+    system_prompt = {
+        "role": "system",
+        "content": (
+            "أنت المساعد الشخصي لنديم (Nadeem). "
+            "أجب دائماً بلهجة أردنية عفوية، ذكية، مهذبة ومختصرة. "
+            "تذكر سياق الحديث ولا تكرر عبارات الترحيب العامة إلا إذا بدأ هو بالسلام."
+        )
+    }
+
+    # بناء سياق الرسائل متضمناً الرسالة الحالية
+    messages_payload = [system_prompt] + chat_history + [{"role": "user", "content": user_message}]
+
+    payload = {
+        "model": model_to_use,
+        "messages": messages_payload,
+        "temperature": 0.6
+    }
+
     try:
-        # 1. سحب الموديلات المتاحة تلقائياً من سيرفر Groq مباشرة
-        models_res = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=5)
-        if models_res.status_code == 200:
-            available_models = [m["id"] for m in models_res.json().get("data", [])]
-        else:
-            available_models = []
-
-        # اختيار الموديل الفعال تلقائياً
-        selected_model = None
-        for m in available_models:
-            if "whisper" not in m and "guard" not in m:
-                selected_model = m
-                break
-
-        if not selected_model:
-            selected_model = available_models[0] if available_models else "llama3-8b-8192"
-
-        print(f"Using Active Groq Model: {selected_model}")
-
-        # 2. توليد الرد بالموديل النشط فعلياً
-        payload = {
-            "model": selected_model,
-            "messages": [
-                {"role": "system", "content": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية ومختصرة جداً."},
-                {"role": "user", "content": user_message}
-            ],
-            "temperature": 0.6
-        }
-
-        res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=10)
+        res = requests.post(url, headers=headers, json=payload, timeout=12)
         if res.status_code == 200:
-            return res.json()["choices"][0]["message"]["content"]
+            reply = res.json()["choices"][0]["message"]["content"]
+            # حفظ المحادثة في الذاكرة فقط بعد نجاح الرد
+            chat_history.append({"role": "user", "content": user_message})
+            chat_history.append({"role": "assistant", "content": reply})
+            if len(chat_history) > 10:
+                chat_history = chat_history[-10:]
+            return reply
         else:
             print(f"Groq API Error: {res.status_code} - {res.text}")
-            return "أهلاً بك! كيف بقدر أساعدك اليوم؟"
-
+            return "معك يا نديم، بس صار ضغط خفيف عالشبكة. شو كنت بتحكي؟"
     except Exception as e:
-        print(f"Exception: {e}")
-        return "أهلاً بك! كيف بقدر أساعدك اليوم؟"
+        print(f"Request Exception: {e}")
+        return "معك يا نديم، سامعك.. احكيلي."
 
 def send_whatsapp_message(to_number: str, message_text: str):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
-        print("Error: WHATSAPP_TOKEN or PHONE_NUMBER_ID missing.")
+        print("Error: WhatsApp credentials missing.")
         return
 
     url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
@@ -90,18 +114,13 @@ def home():
 @app.get("/webhook")
 def verify_webhook(request: Request):
     params = request.query_params
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
-
-    if mode == "subscribe" and token == VERIFY_TOKEN:
-        return Response(content=challenge, media_type="text/plain")
+    if params.get("hub.mode") == "subscribe" and params.get("hub.verify_token") == VERIFY_TOKEN:
+        return Response(content=params.get("hub.challenge"), media_type="text/plain")
     return Response(content="Forbidden", status_code=403)
 
 @app.post("/webhook")
 async def handle_incoming_messages(request: Request):
     data = await request.json()
-
     try:
         entry = data.get("entry", [])[0]
         changes = entry.get("changes", [])[0]
