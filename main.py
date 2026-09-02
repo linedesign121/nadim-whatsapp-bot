@@ -32,7 +32,7 @@ def get_gemini_reply(user_message: str) -> str:
     }
 
     try:
-        res = requests.post(url, json=payload, headers=headers, timeout=30)
+        res = requests.post(url, json=payload, headers=headers, timeout=60)
         data = res.json()
         if res.status_code == 200 and "candidates" in data:
             return data["candidates"][0]["content"]["parts"][0]["text"]
