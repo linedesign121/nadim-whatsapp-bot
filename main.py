@@ -15,26 +15,32 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 def get_gemini_reply(user_message: str) -> str:
     if not GEMINI_API_KEY:
+        print("Error: GEMINI_API_KEY is not set!")
         return "أهلاً بك! تم استلام رسالتك."
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [
             {
                 "parts": [
                     {
-                        "text": f"أنت المساعد الشخصي لنديم، أجب بلهجة أردنية مهذبة ومختصرة: {user_message}"
+                        "text": f"أنت المساعد الشخصي لنديم (Nadim). أجب بلهجة أردنية مهذبة، ذكية، ومختصرة جداً على هذه الرسالة: {user_message}"
                     }
                 ]
             }
         ]
     }
     try:
-        res = requests.post(url, json=payload, headers=headers, timeout=10)
+        res = requests.post(url, json=payload, headers=headers, timeout=15)
         data = res.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        if "candidates" in data and len(data["candidates"]) > 0:
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        else:
+            print(f"Gemini raw response error: {data}")
+            return "أهلاً بك! معك المساعد الشخصي لنديم، كيف بقدر أساعدك؟"
     except Exception as err:
-        print(f"Gemini API error: {err}, details: {res.text if 'res' in locals() else ''}")
+        print(f"Gemini API Exception: {err}")
         return "أهلاً بك! معك المساعد الشخصي لنديم، كيف بقدر أساعدك؟"
 
 
