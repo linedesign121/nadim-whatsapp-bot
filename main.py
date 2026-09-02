@@ -2,7 +2,6 @@ import datetime
 import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Request, Response
-from google import genai
 import requests
 
 app = FastAPI()
@@ -13,7 +12,30 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nadim_secure_token_123")
 MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+def get_gemini_reply(user_message: str) -> str:
+    if not GEMINI_API_KEY:
+        return "أهلاً بك! تم استلام رسالتك."
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": f"أنت المساعد الشخصي لنديم، أجب بلهجة أردنية مهذبة ومختصرة: {user_message}"
+                    }
+                ]
+            }
+        ]
+    }
+    try:
+        res = requests.post(url, json=payload, headers=headers, timeout=10)
+        data = res.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception as err:
+        print(f"Gemini API error: {err}, details: {res.text if 'res' in locals() else ''}")
+        return "أهلاً بك! معك المساعد الشخصي لنديم، كيف بقدر أساعدك؟"
 
 
 def send_whatsapp_msg(to_number: str, text: str):
@@ -83,12 +105,8 @@ async def receive_webhook(request: Request):
             from_number = msg_obj.get("from")
             text = msg_obj.get("text", {}).get("body", "")
 
-            if text and ai_client:
-                prompt = "أنت المساعد الشخصي لنديم، أجب باختصار وذكاء: " + text
-                response = ai_client.models.generate_content(
-                    model="gemini-1.5-flash", contents=prompt
-                )
-                bot_reply = response.text
+            if text:
+                bot_reply = get_gemini_reply(text)
                 send_whatsapp_msg(from_number, bot_reply)
     except Exception as e:
         print(f"Webhook processing error: {e}")
