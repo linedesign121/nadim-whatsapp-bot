@@ -1,8 +1,8 @@
-import datetime
 import os
-from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI, Request, Response
+import datetime
 import requests
+from fastapi import FastAPI, Request, Response
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = FastAPI()
 
@@ -15,17 +15,17 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 def get_gemini_reply(user_message: str) -> str:
     if not GEMINI_API_KEY:
-        print("CRITICAL: GEMINI_API_KEY is not defined in Environment variables!")
-        return "أهلاً بك! تم استلام رسالتك، جاري ضبط الإعدادات."
+        print("CRITICAL: GEMINI_API_KEY is not set!")
+        return "أهلاً بك! تم استلام رسالتك."
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [
             {
                 "parts": [
                     {
-                        "text": f"أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة وذكية ومختصرة على التالي: {user_message}"
+                        "text": f"أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية، ومختصرة جداً: {user_message}"
                     }
                 ]
             }
@@ -34,33 +34,31 @@ def get_gemini_reply(user_message: str) -> str:
     try:
         res = requests.post(url, json=payload, headers=headers, timeout=15)
         data = res.json()
-        print(f"Gemini API Response Status: {res.status_code}")
-        print(f"Gemini API Full Response: {data}")
-
+        print(f"Gemini Status: {res.status_code}")
+        
         if res.status_code == 200 and "candidates" in data:
             return data["candidates"][0]["content"]["parts"][0]["text"]
         else:
-            error_msg = data.get("error", {}).get("message", "Unknown error")
-            return f"عذراً، حدث خطأ أثناء معالجة الرد من الذكاء الاصطناعي: {error_msg}"
+            err = data.get("error", {}).get("message", "Unknown error")
+            return f"عذراً، حدث خطأ: {err}"
     except Exception as err:
-        print(f"Exception calling Gemini: {err}")
-        return f"عذراً، حدث خطأ تقني: {str(err)}"
+        return f"عذراً، خطأ في الاتصال: {str(err)}"
 
 
 def send_whatsapp_msg(to_number: str, text: str):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
-        print("Error: WHATSAPP_TOKEN or PHONE_NUMBER_ID is missing!")
+        print("Error: WHATSAPP_TOKEN or PHONE_NUMBER_ID missing!")
         return
     url = f"https://graph.facebook.com/v25.0/{PHONE_NUMBER_ID}/messages"
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
     }
     payload = {
         "messaging_product": "whatsapp",
         "to": to_number,
         "type": "text",
-        "text": {"body": text},
+        "text": {"body": text}
     }
     res = requests.post(url, json=payload, headers=headers)
     print(f"WhatsApp API Status: {res.status_code}, Response: {res.text}")
