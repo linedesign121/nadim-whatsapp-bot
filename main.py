@@ -18,7 +18,7 @@ def get_gemini_reply(user_message: str) -> str:
         print("CRITICAL: GEMINI_API_KEY is not set!")
         return "أهلاً بك! تم استلام رسالتك."
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY.strip()}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [
@@ -33,18 +33,18 @@ def get_gemini_reply(user_message: str) -> str:
     }
 
     try:
-        res = requests.post(url, json=payload, headers=headers, timeout=35)
+        res = requests.post(url, json=payload, headers=headers, timeout=20)
         data = res.json()
-        print("حالة برج الجوزاء (Gemini Status):", res.status_code)
+        print("حالة Gemini:", res.status_code)
 
         if res.status_code == 200 and "candidates" in data:
             return data["candidates"][0]["content"]["parts"][0]["text"]
         else:
             err_msg = data.get("error", {}).get("message", "خطأ غير معروف")
             print(f"Gemini Error: {err_msg}")
-            return "عذراً، حدث خطأ أثناء معالجة الطلب."
+            return "يا هلا بيك! النظام قيد التحديث السريع، كيف أقدر أساعدك؟"
     except requests.exceptions.Timeout:
-        return "عذراً، استغرقت الاستجابة وقتاً طويلاً. يرجى المحاولة مرة أخرى."
+        return "المعذرة سيدي، الاتصال أخذ وقت أطول من المعتاد. ابعثلي كمان مرة."
     except Exception as e:
         print(f"Gemini Exception: {e}")
         return f"عذراً، خطأ في الاتصال: {e}"
@@ -57,7 +57,7 @@ def send_whatsapp_message(to: str, text: str):
 
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
     headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Authorization": f"Bearer {WHATSAPP_TOKEN.strip()}",
         "Content-Type": "application/json",
     }
     payload = {
