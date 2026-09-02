@@ -15,8 +15,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 def get_gemini_reply(user_message: str) -> str:
     if not GEMINI_API_KEY:
-        print("Error: GEMINI_API_KEY is not set!")
-        return "أهلاً بك! تم استلام رسالتك."
+        print("CRITICAL: GEMINI_API_KEY is not defined in Environment variables!")
+        return "أهلاً بك! تم استلام رسالتك، جاري ضبط الإعدادات."
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
@@ -25,7 +25,7 @@ def get_gemini_reply(user_message: str) -> str:
             {
                 "parts": [
                     {
-                        "text": f"أنت المساعد الشخصي لنديم (Nadim). أجب بلهجة أردنية مهذبة، ذكية، ومختصرة جداً على هذه الرسالة: {user_message}"
+                        "text": f"أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة وذكية ومختصرة على التالي: {user_message}"
                     }
                 ]
             }
@@ -34,14 +34,17 @@ def get_gemini_reply(user_message: str) -> str:
     try:
         res = requests.post(url, json=payload, headers=headers, timeout=15)
         data = res.json()
-        if "candidates" in data and len(data["candidates"]) > 0:
+        print(f"Gemini API Response Status: {res.status_code}")
+        print(f"Gemini API Full Response: {data}")
+
+        if res.status_code == 200 and "candidates" in data:
             return data["candidates"][0]["content"]["parts"][0]["text"]
         else:
-            print(f"Gemini raw response error: {data}")
-            return "أهلاً بك! معك المساعد الشخصي لنديم، كيف بقدر أساعدك؟"
+            error_msg = data.get("error", {}).get("message", "Unknown error")
+            return f"عذراً، حدث خطأ أثناء معالجة الرد من الذكاء الاصطناعي: {error_msg}"
     except Exception as err:
-        print(f"Gemini API Exception: {err}")
-        return "أهلاً بك! معك المساعد الشخصي لنديم، كيف بقدر أساعدك؟"
+        print(f"Exception calling Gemini: {err}")
+        return f"عذراً، حدث خطأ تقني: {str(err)}"
 
 
 def send_whatsapp_msg(to_number: str, text: str):
