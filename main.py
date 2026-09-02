@@ -15,18 +15,34 @@ def get_ai_reply(user_message: str) -> str:
     if not GROQ_API_KEY:
         return "المعذرة سيدي، مفتاح الذكاء الاصطناعي غير متوفر."
 
-    url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    # النماذج المستقرة والمعتمدة في Groq
-    models = ["mixtral-8x7b-32768", "gemma2-9b-it"]
+    try:
+        # 1. سحب الموديلات المتاحة تلقائياً من سيرفر Groq مباشرة
+        models_res = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=5)
+        if models_res.status_code == 200:
+            available_models = [m["id"] for m in models_res.json().get("data", [])]
+        else:
+            available_models = []
 
-    for model_name in models:
+        # اختيار الموديل الفعال تلقائياً
+        selected_model = None
+        for m in available_models:
+            if "whisper" not in m and "guard" not in m:
+                selected_model = m
+                break
+
+        if not selected_model:
+            selected_model = available_models[0] if available_models else "llama3-8b-8192"
+
+        print(f"Using Active Groq Model: {selected_model}")
+
+        # 2. توليد الرد بالموديل النشط فعلياً
         payload = {
-            "model": model_name,
+            "model": selected_model,
             "messages": [
                 {"role": "system", "content": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية ومختصرة جداً."},
                 {"role": "user", "content": user_message}
@@ -34,16 +50,16 @@ def get_ai_reply(user_message: str) -> str:
             "temperature": 0.6
         }
 
-        try:
-            res = requests.post(url, headers=headers, json=payload, timeout=10)
-            if res.status_code == 200:
-                return res.json()["choices"][0]["message"]["content"]
-            else:
-                print(f"Groq Model {model_name} Error: {res.status_code} - {res.text}")
-        except Exception as e:
-            print(f"Groq Exception on {model_name}: {e}")
+        res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=10)
+        if res.status_code == 200:
+            return res.json()["choices"][0]["message"]["content"]
+        else:
+            print(f"Groq API Error: {res.status_code} - {res.text}")
+            return "أهلاً بك! كيف بقدر أساعدك اليوم؟"
 
-    return "أهلاً بك! كيف بقدر أساعدك اليوم؟"
+    except Exception as e:
+        print(f"Exception: {e}")
+        return "أهلاً بك! كيف بقدر أساعدك اليوم؟"
 
 def send_whatsapp_message(to_number: str, message_text: str):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
