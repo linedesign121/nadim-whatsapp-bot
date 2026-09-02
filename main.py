@@ -1,17 +1,16 @@
 import os
+import time
 import requests
 from fastapi import FastAPI, Request, Response
 from google import genai
 
 app = FastAPI()
 
-# المتغيرات البيئية
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "my_secret_token_123")
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# إعداد عميل Gemini
 client = None
 if GEMINI_API_KEY:
     try:
@@ -19,41 +18,33 @@ if GEMINI_API_KEY:
     except Exception as e:
         print(f"Error initializing Gemini Client: {e}")
 
-# تخزين مؤقت للرسائل المعالجة لتفادي التكرار
 processed_messages = set()
 
 def get_gemini_reply(user_message: str) -> str:
     if not client:
-        return "المعذرة، مفتاح الذكاء الاصطناعي غير معرف حالياً."
-    
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=user_message,
-            config={
-                "system_instruction": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية ومختصرة."
-            }
-        )
-        return response.text if response.text else "أهلاً بك، كيف أساعدك؟"
-    except Exception as e:
-        print(f"Gemini API Error: {e}")
-        # محاولة أخيرة عبر الموديل الأقدم في حال الضغط
+        return "المعذرة سيدي، مفتاح الذكاء الاصطناعي غير معرف."
+
+    # محاولة الإرسال حتى 3 مرات لتجاوز أي ضغط لحظي (503)
+    for attempt in range(3):
         try:
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-3.6-flash",
                 contents=user_message,
                 config={
-                    "system_instruction": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية ومختصرة."
+                    "system_instruction": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية، ومختصرة جداً."
                 }
             )
-            return response.text
-        except Exception as e2:
-            print(f"Fallback Error: {e2}")
-            return "المعذرة، واجهت مشكلة اتصال مؤقتة، ثواني وبكون جاهز."
+            if response.text:
+                return response.text
+        except Exception as e:
+            print(f"Gemini API Error (Attempt {attempt + 1}): {e}")
+            time.sleep(1.5)
+
+    return "أهلاً بك سيدي! كيف بقدر أساعدك اليوم؟"
 
 def send_whatsapp_message(to_number: str, message_text: str):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
-        print("Error: WHATSAPP_TOKEN or PHONE_NUMBER_ID is missing.")
+        print("Error: WHATSAPP_TOKEN or PHONE_NUMBER_ID missing.")
         return
 
     url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
@@ -75,7 +66,7 @@ def send_whatsapp_message(to_number: str, message_text: str):
 
 @app.get("/")
 def home():
-    return {"status": "running", "bot": "Nadim WhatsApp Bot"}
+    return {"status": "running"}
 
 @app.get("/webhook")
 def verify_webhook(request: Request):
@@ -104,7 +95,6 @@ async def handle_incoming_messages(request: Request):
         msg = messages[0]
         msg_id = msg.get("id")
 
-        # منع تكرار الرد على نفس الرسالة
         if msg_id in processed_messages:
             return {"status": "ignored_duplicate"}
 
@@ -112,15 +102,11 @@ async def handle_incoming_messages(request: Request):
         if len(processed_messages) > 1000:
             processed_messages.clear()
 
-        # معالجة الرسالة النصية
         if msg.get("type") == "text":
             from_number = msg.get("from")
             body = msg.get("text", {}).get("body", "")
 
-            # توليد الرد من Gemini
             bot_reply = get_gemini_reply(body)
-
-            # إرسال الرد إلى واتساب
             send_whatsapp_message(from_number, bot_reply)
 
     except Exception as e:
