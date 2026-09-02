@@ -18,7 +18,7 @@ def get_gemini_reply(user_message: str) -> str:
         print("CRITICAL: GEMINI_API_KEY is not set!")
         return "أهلاً بك! تم استلام رسالتك."
 
-    models_to_try = ["gemini-3.6-flash", "gemini-3.1-pro-preview"]
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY.strip()}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [
@@ -32,22 +32,22 @@ def get_gemini_reply(user_message: str) -> str:
         ]
     }
 
-    for model_name in models_to_try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY.strip()}"
-        try:
-            res = requests.post(url, json=payload, headers=headers, timeout=20)
-            data = res.json()
-            print(f"تجربة موديل {model_name} - الحالة: {res.status_code}")
+    try:
+        res = requests.post(url, json=payload, headers=headers, timeout=40)
+        data = res.json()
+        print(f"حالة Gemini - الحالة: {res.status_code}")
 
-            if res.status_code == 200 and "candidates" in data:
-                return data["candidates"][0]["content"]["parts"][0]["text"]
-            else:
-                err_msg = data.get("error", {}).get("message", "خطأ غير معروف")
-                print(f"Gemini Error ({model_name}): {err_msg}")
-        except Exception as e:
-            print(f"Gemini Exception ({model_name}): {e}")
-
-    return "يا هلا بيك سيدي نديم! النظام عم يعمل تحديث فوري، ابعثلي كمان ثواني وبكون معك."
+        if res.status_code == 200 and "candidates" in data:
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        else:
+            err_msg = data.get("error", {}).get("message", "خطأ غير معروف")
+            print(f"Gemini Error: {err_msg}")
+            return f"عذراً سيدي، خطأ من الخادم: {err_msg}"
+    except requests.exceptions.Timeout:
+        return "المعذرة سيدي، استغرقت الاستجابة وقتاً طويلاً، يرجى إعادة الإرسال."
+    except Exception as e:
+        print(f"Gemini Exception: {e}")
+        return f"عذراً، خطأ في الاتصال: {e}"
 
 
 def send_whatsapp_message(to: str, text: str):
@@ -69,7 +69,7 @@ def send_whatsapp_message(to: str, text: str):
 
     try:
         res = requests.post(url, json=payload, headers=headers, timeout=20)
-        print(f"حالة واجهة برمجة تطبيقات واتساب: {res.status_code}, إجابة: {res.text}")
+        print(f"حالة واجهة برمجة تطبيقات واتساب: {res.status_code}")
     except Exception as e:
         print(f"خطأ في إرسال رسالة واتساب: {e}")
 
