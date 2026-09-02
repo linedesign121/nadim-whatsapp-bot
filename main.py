@@ -20,25 +20,30 @@ def get_ai_reply(user_message: str) -> str:
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {"role": "system", "content": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية ومختصرة جداً."},
-            {"role": "user", "content": user_message}
-        ],
-        "temperature": 0.6
-    }
 
-    try:
-        res = requests.post(url, headers=headers, json=payload, timeout=10)
-        if res.status_code == 200:
-            return res.json()["choices"][0]["message"]["content"]
-        else:
-            print(f"Groq API Error: {res.status_code} - {res.text}")
-            return "أهلاً بك! كيف بقدر أساعدك اليوم؟"
-    except Exception as e:
-        print(f"Groq Exception: {e}")
-        return "أهلاً بك! كيف بقدر أساعدك اليوم؟"
+    # تجربة الموديلات المتاحة على Groq بالتتابع
+    models = ["llama-3.1-70b-versatile", "llama3-70b-8192", "llama3-8b-8192"]
+
+    for model_name in models:
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": "أنت المساعد الشخصي لنديم. أجب بلهجة أردنية مهذبة، ذكية، ومختصرة جداً."},
+                {"role": "user", "content": user_message}
+            ],
+            "temperature": 0.6
+        }
+
+        try:
+            res = requests.post(url, headers=headers, json=payload, timeout=10)
+            if res.status_code == 200:
+                return res.json()["choices"][0]["message"]["content"]
+            else:
+                print(f"Groq Model {model_name} Error: {res.status_code} - {res.text}")
+        except Exception as e:
+            print(f"Groq Exception on {model_name}: {e}")
+
+    return "أهلاً بك! كيف بقدر أساعدك اليوم؟"
 
 def send_whatsapp_message(to_number: str, message_text: str):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
